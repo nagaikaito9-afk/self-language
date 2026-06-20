@@ -18,30 +18,15 @@
         
         .main-layout { display: flex; flex: 1; overflow: hidden; padding: 10px; gap: 10px; }
         
-        /* 左：エディタ */
         #editor-container { flex: 1; display: flex; flex-direction: column; font-size: 16px; border: 1px solid #3e3e42; border-radius: 4px; }
         .CodeMirror { flex: 1; font-family: 'Consolas', monospace; border-radius: 4px; }
         
-        /* 右：キャンバス（画面）とエラー表示エリア */
         #display-container { flex: 1; display: flex; flex-direction: column; background-color: #252526; border: 1px solid #3e3e42; border-radius: 4px; position: relative; overflow: hidden;}
         
-        /* キャンバスを中央に配置する用の枠 */
         #canvas-wrapper { flex: 1; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 10px; }
-        canvas { background-color: white; box-shadow: 0 4px 8px rgba(0,0,0,0.5); }
+        canvas { background-color: white; box-shadow: 0 4px 8px rgba(0,0,0,0.5); cursor: default; }
         
-        /* エラー表示用の黒板（右下に固定） */
-        #error-console { 
-            display: none; 
-            background-color: #3b0000; 
-            color: #ff6b6b; 
-            border-top: 2px solid #ff4c4c;
-            padding: 10px; 
-            font-family: monospace; 
-            font-size: 14px;
-            white-space: pre-wrap; 
-            max-height: 150px; 
-            overflow-y: auto;
-        }
+        #error-console { display: none; background-color: #3b0000; color: #ff6b6b; border-top: 2px solid #ff4c4c; padding: 10px; font-family: monospace; font-size: 14px; white-space: pre-wrap; max-height: 150px; overflow-y: auto; }
     </style>
 </head>
 <body>
@@ -65,46 +50,48 @@
     </div>
 
     <script>
-        // JSの関数を外から呼べるようにwindowに登録
         window.editor = CodeMirror.fromTextArea(document.getElementById("editor"), {
-            mode: "python",
-            theme: "monokai",
-            lineNumbers: true,
-            indentUnit: 4,
-            matchBrackets: true
+            mode: "python", theme: "monokai", lineNumbers: true, indentUnit: 4, matchBrackets: true,
+            extraKeys: { "Enter": "newlineAndIndent" }
         });
         
+        // ★新しい関数とボタンのサンプルコード
         window.editor.setValue(`screen(500, 400)
 
-# printには「表示したい文字」を最初に入れます
+# 押されたときに実行する関数(処理)を作ります
+fun zikkou():
+    print("ボタンが押されました！", (120, 280), 24, GREEN)
+
 print("オリジナル言語へようこそ！", (50, 50), 24, BLUE)
 
-# buttonは (座標), (大きさ), "文字", 文字サイズ, 文字色, 背景色
-button((100, 150), (300, 80), "押してね！", 30, RED, YELLOW, BLACK)
+# 最後に {zikkou} をつけて、ボタンと関数を繋げます
+button((100, 150), (300, 80), "押してね！", 30, RED, YELLOW, BLACK, {zikkou})
 `);
 
-        // 使い方のアラート画面
         function showHelp() {
             const helpText = `【オリジナル言語の文法】
 
 ① screen(幅, 高さ)
 最初に必ず書いてください。
-例：screen(500, 400)
 
 ② print("文字", (X, Y), サイズ, 色)
 画面に文字を表示します。
-例：print("こんにちは", (10, 10), 20, RED)
 
-③ button((X, Y), (幅, 高さ), "文字", 文字サイズ, 文字色, 背景色, 枠の色)
+③ fun 関数名():
+まとめたい処理を作ります。（次の行はインデントを開けてください）
+例：fun zikkou():
+
+④ button((X, Y), (幅, 高さ), "文字", 文字サイズ, 文字色, 背景色, 枠の色, {関数名})
 ボタンを表示します。（枠の色は省略可能）
-例：button((50, 50), (200, 50), "OK", 20, WHITE, BLUE, BLACK)`;
+例：button((50,50), (200,50), "OK", 20, WHITE, BLUE, {zikkou})`;
             alert(helpText);
         }
     </script>
 
     <script type="py">
+        import re
         import traceback
-        from pyscript import document, when
+        from pyscript import document, when, window
 
         canvas = document.getElementById("game-canvas")
         ctx = canvas.getContext("2d")
@@ -112,6 +99,7 @@ button((100, 150), (300, 80), "押してね！", 30, RED, YELLOW, BLACK)
 
         # --- オリジナル言語のシステム ---
         is_screen_ready = False
+        click_events = [] # ボタンの当たり判定と関数を記憶するリスト
 
         RED = "red"
         YELLOW = "yellow"
@@ -125,25 +113,40 @@ button((100, 150), (300, 80), "押してね！", 30, RED, YELLOW, BLACK)
             canvas.width = w
             canvas.height = h
             is_screen_ready = True
+            click_events.clear() # 画面リセット時にボタンの記憶も消す
             ctx.fillStyle = WHITE
             ctx.fillRect(0, 0, w, h)
 
-        # ユーザーが「文字」を入れ忘れないように第一引数をtextにしています
         def custom_print(text, pos, size, color):
-            if not is_screen_ready:
-                raise Exception("最初に screen() を設定してください！")
-            
+            if not is_screen_ready: raise Exception("画面未設定")
             ctx.fillStyle = color
             ctx.font = f"bold {size}px sans-serif"
             ctx.fillText(str(text), pos[0], pos[1] + size)
 
-        def button(pos, size, text, font_size, text_color, bg_color, border_color=None):
-            if not is_screen_ready:
-                raise Exception("最初に screen() を設定してください！")
+        # arg1, arg2 を使って、枠線が省略された場合にも対応
+        def button(pos, size, text, font_size, text_color, bg_color, arg1=None, arg2=None):
+            if not is_screen_ready: raise Exception("画面未設定")
             
             x, y = pos
             w, h = size
+            border_color = None
+            action = None
             
+            # { } で囲まれたもの（PythonではSet型になります）か、関数そのものかを判断
+            if arg2 is not None:
+                border_color = arg1
+                action = arg2
+            elif arg1 is not None:
+                if isinstance(arg1, set) or callable(arg1):
+                    action = arg1
+                else:
+                    border_color = arg1
+
+            # {zikkou} のように { } がついている場合は中身を取り出す
+            if isinstance(action, set):
+                action = list(action)[0]
+
+            # 描画処理
             ctx.fillStyle = bg_color
             ctx.fillRect(x, y, w, h)
             
@@ -157,42 +160,81 @@ button((100, 150), (300, 80), "押してね！", 30, RED, YELLOW, BLACK)
             ctx.textAlign = "center"
             ctx.textBaseline = "middle"
             ctx.fillText(str(text), x + w/2, y + h/2)
-            
             ctx.textAlign = "left"
             ctx.textBaseline = "alphabetic"
+
+            # クリックされた時のために、場所と関数を記憶しておく
+            if callable(action):
+                click_events.append((x, y, w, h, action))
+
+        # --- マウスクリック時の当たり判定処理 ---
+        @when("click", "#game-canvas")
+        def on_canvas_click(event):
+            if not is_screen_ready: return
+            
+            # キャンバス上のどこをクリックしたか計算
+            rect = canvas.getBoundingClientRect()
+            click_x = event.clientX - rect.left
+            click_y = event.clientY - rect.top
+            
+            # 記憶したボタンの範囲に入っているかチェック
+            for bx, by, bw, bh, action in reversed(click_events):
+                if bx <= click_x <= bx + bw and by <= click_y <= by + bh:
+                    try:
+                        action() # ボタンに設定された関数を実行！
+                    except Exception as e:
+                        show_japanese_error()
+                    break
 
         original_language_globals = {
             "screen": screen, "print": custom_print, "button": button,
             "RED": RED, "YELLOW": YELLOW, "BLUE": BLUE, "GREEN": GREEN, "BLACK": BLACK, "WHITE": WHITE
         }
 
+        # --- 日本語エラー翻訳システム ---
+        def show_japanese_error():
+            error_el.style.display = "block"
+            err_str = traceback.format_exc()
+            msg = "🚨 エラーが発生しました:\n"
+            
+            if "NameError" in err_str:
+                msg += "名前エラー: 使おうとした名前が見つかりません。つづり間違いや、文字を「\" \"」で囲み忘れていませんか？"
+            elif "SyntaxError" in err_str:
+                msg += "文法エラー: コードの書き方が間違っています。カッコ「()」の閉じ忘れや、「:」の付け忘れを確認してください。"
+            elif "IndentationError" in err_str:
+                msg += "インデントエラー: funコマンドの下は、スペースを入れて字下げ（インデント）をする必要があります。"
+            elif "TypeError" in err_str:
+                msg += "使い方エラー: カッコの中に入れる情報の数（カンマの数）が間違っています。使い方ボタンで確認してください。"
+            elif "画面未設定" in err_str:
+                msg += "画面エラー: 必ず一番最初の行に screen(幅, 高さ) を書いてください。"
+            else:
+                msg += "原因不明のエラーです。カッコの数やコンマの忘れをチェックしてください。"
+                
+            error_el.innerText = msg
+
+        # --- 実行処理 ---
         @when("click", "#btn-run")
         def run_code(event):
             global is_screen_ready
             
-            # 前の画面とエラーを綺麗に消す
             is_screen_ready = False
             ctx.clearRect(0, 0, canvas.width, canvas.height)
             canvas.width = 0
             canvas.height = 0
+            click_events.clear()
             
             error_el.style.display = "none"
             error_el.innerText = ""
             
-            from js import window
             code = window.editor.getValue()
+            
+            # ★ここで「fun」をPythonが理解できる「def」にこっそり書き換えます
+            code = re.sub(r'\bfun\b', 'def', code)
             
             try:
                 exec(code, original_language_globals)
-            except Exception as e:
-                # エラーが出た場合、右下に画面を表示して内容を書き込む
-                error_el.style.display = "block"
-                
-                # ユーザーにとって見やすいように、エラーの最後の数行だけを抽出する
-                err_lines = traceback.format_exc().strip().split('\n')
-                friendly_error = "\n".join(err_lines[-3:]) # 下から3行だけ取得
-                
-                error_el.innerText = "🚨 エラーが発生しました！文法を確認してください:\n" + friendly_error
+            except Exception:
+                show_japanese_error()
     </script>
 </body>
 </html>
