@@ -40,7 +40,7 @@
         </div>
 
         <div id="display-container">
-            <div id="canvas-wrapper">
+            <div id="canvas-wrapper" tabindex="0">
                 <canvas id="game-canvas" width="0" height="0"></canvas>
             </div>
             <div id="error-console"></div>
@@ -53,64 +53,52 @@
             extraKeys: { "Enter": "newlineAndIndent" }
         });
         
-        // ★進化したあなたの言語のサンプルコードです！
+        // ★キーボード操作と音声のサンプルコードです！
         window.editor.setValue(`screen(500, 400)
 
-# 変数とリストが使えます
-x_pos = 100
-colors = [RED, BLUE, GREEN]
+print("info", "右側の画面をクリックしてから、キーを押してね！", (10, 30), 16, BLUE)
+print("player", "🚗", (200, 150), 60, BLACK)
 
-fun zikkou():
-    # 押されたら古いタイトルを消して、新しい文字を出す
-    erase("title")
-    print("msg", "ボタンが押されました！", (120, 280), 24, colors[2])
+# UPキー（上矢印）が押されたら動かす
+key(UP):
+    move("player", ((200, 150), (200, 50), 0.5), 1)
 
-# すべての要素に "名前" をつけます
-print("title", "オリジナル言語！", (x_pos, 50), 24, colors[1])
-button("btn1", (100, 150), (300, 80), "押してね！", 30, RED, YELLOW, BLACK, {zikkou})
+# DOWNキー（下矢印）が押されたら動かす
+key(DOWN):
+    move("player", ((200, 50), (200, 150), 0.5), 1)
 
-# アニメーション機能（文字を右下に2秒かけて動かし、一生繰り返す）
-move("title", ((100, 50), (100, 100), 2), infinite)
-
-# 繰り返しと待機機能
-Repeat(3):
-    print("timer", "タイマー作動中...", (10, 10), 16, BLACK)
+# Aキーが押されたらインターネット上の音を鳴らす
+key(A):
+    print("msg", "クラクション！", (200, 250), 20, RED)
+    audio.play("https://www.soundjay.com/buttons/sounds/button-10.mp3")
     wait(1)
-    erase("timer")
-    wait(1)
+    erase("msg")
 `);
 
         function showHelp() {
             const helpText = `【新機能の使い方】
 
-① すべての要素に "名前" をつける
-printやbuttonの最初に "名前" を追加します。
-例：print("タイトル", "文字", (10,10), 20, RED)
+① key(キーの名前):
+指定したキーが押されたときにインデントの中身を実行します。
+※実行画面（右側）を一度クリックしてからキーを押してください。
+使えるキー：A, B, Cなどのアルファベット、UP, DOWN, LEFT, RIGHT, SPACE, ENTER
 
-② erase("名前")
-指定した文字やボタンを消去します。
-
-③ move("名前", ((始点X, 始点Y), (終点X, 終点Y), 秒数), 回数)
-要素を動かします。回数を infinite にすると一生動きます。
-例：move("タイトル", ((0,0), (50,50), 1), infinite)
-
-④ Repeat(回数):
-インデントの中身を指定した回数だけ繰り返します。
-例：Repeat(10):
-
-⑤ wait(秒数, {関数})
-指定した時間待ちます。関数を指定すると待機中に実行され続けます。
-
-※ a = 1 などの変数や、if a == 1: などの条件分岐もPythonと同じように使えます！`;
+② audio.play("URL")
+インターネット上にあるMP3などの音声を再生します。
+パソコンのフォルダは指定できないので注意してください！
+例：audio.play("https://example.com/sound.mp3")`;
             alert(helpText);
         }
 
-        // ★JS側での魔法の変換処理（ユーザーの独自文法をPythonに翻訳）
+        // ★JS側での魔法の変換処理（key文法を追加！）
         window.getWrappedCode = function() {
             let code = window.editor.getValue();
             code = code.replace(/\bfun\b/g, "def");
             code = code.replace(/\bRepeat\s*\((.*?)\)\s*:/g, "for _ in range($1):");
-            code = code.replace(/\bwait\s*\(/g, "await wait("); // waitを非同期に変換
+            code = code.replace(/\bwait\s*\(/g, "await wait(");
+            
+            // key(A): を裏側で @register_key('A') def __key_A__(): に変換する魔法
+            code = code.replace(/\bkey\s*\(\s*([a-zA-Z0-9_]+)\s*\)\s*:/g, "@register_key('$1')\ndef __key_$1__():");
             
             let lines = code.split('\n');
             let wrapped = `async def __user_main__():\n`;
@@ -125,6 +113,7 @@ printやbuttonの最初に "名前" を追加します。
         import traceback
         import asyncio
         from pyscript import document, when, window
+        from js import Audio # ブラウザの音声機能
 
         canvas = document.getElementById("game-canvas")
         ctx = canvas.getContext("2d")
@@ -134,9 +123,9 @@ printやbuttonの最初に "名前" を追加します。
         is_screen_ready = False
         current_run_id = 0
         
-        # 画面にある要素とアニメーションを記憶する辞書
         elements = {}
         animations = {}
+        key_events = {} # キー入力と関数を紐付けるリスト
 
         RED, YELLOW, BLUE, GREEN, BLACK, WHITE = "red", "yellow", "blue", "green", "black", "white"
         infinite = -1
@@ -156,15 +145,11 @@ printやbuttonの最初に "名前" を追加します。
             x, y = pos
             w, h = size
             border_color, action = None, None
-            
-            if arg2 is not None:
-                border_color, action = arg1, arg2
+            if arg2 is not None: border_color, action = arg1, arg2
             elif arg1 is not None:
                 if isinstance(arg1, set) or callable(arg1): action = arg1
                 else: border_color = arg1
-
             if isinstance(action, set): action = list(action)[0]
-
             elements[name] = {
                 "type": "button", "x": x, "y": y, "w": w, "h": h, "text": text,
                 "font_size": font_size, "text_color": text_color, "bg_color": bg_color,
@@ -183,8 +168,7 @@ printやbuttonの最初に "名前" を追加します。
                 "elapsed": 0.0, "repeat_total": repeat_count, "repeat_current": 0
             }
 
-        def custom_random(a, b):
-            return random.randint(a, b)
+        def custom_random(a, b): return random.randint(a, b)
 
         async def wait(seconds, func=None):
             if isinstance(func, set): func = list(func)[0]
@@ -195,15 +179,53 @@ printやbuttonの最初に "名前" を追加します。
                     except Exception: show_japanese_error()
                 await asyncio.sleep(0.016)
 
-        # --- マウスクリック判定 ---
+        # --- 新機能：キーボード登録用デコレータ ---
+        def register_key(k_name):
+            def decorator(func):
+                # 登録された関数をリストに記憶する
+                key_events[k_name.upper()] = func
+                return func
+            return decorator
+
+        # --- 新機能：音声再生クラス ---
+        class AudioController:
+            def play(self, url):
+                try:
+                    # ブラウザのAudio機能を使ってURLから音を鳴らす
+                    a = Audio.new(url)
+                    a.play()
+                except Exception:
+                    custom_print("audio_err", "🚨 音声エラー: URLを確認してください", (10, 380), 14, RED)
+
+        # --- キーボードが押された時の処理 ---
+        @when("keydown", "body")
+        def on_keydown(event):
+            if not is_screen_ready: return
+            
+            # ブラウザのキーコードを、あなたが使いやすい名前に変換
+            key_map = {
+                "ARROWUP": "UP", "ARROWDOWN": "DOWN", "ARROWLEFT": "LEFT", "ARROWRIGHT": "RIGHT", 
+                " ": "SPACE", "ESCAPE": "ESC"
+            }
+            k = event.key.upper()
+            k = key_map.get(k, k) # マップに変換表があれば変換、なければそのまま(A, Bなど)
+
+            # 押されたキーが登録されていれば、その処理を呼び出す
+            if k in key_events:
+                # 矢印キーで画面がスクロールしてしまうのを防ぐ
+                if k in ["UP", "DOWN", "LEFT", "RIGHT", "SPACE"]:
+                    event.preventDefault()
+                try:
+                    key_events[k]()
+                except Exception:
+                    show_japanese_error()
+
         @when("click", "#game-canvas")
         def on_canvas_click(event):
             if not is_screen_ready: return
             rect = canvas.getBoundingClientRect()
             click_x = event.clientX - rect.left
             click_y = event.clientY - rect.top
-            
-            # 画面の上に描かれているもの（後に追加されたもの）から順番に判定
             for name, el in reversed(list(elements.items())):
                 if el["type"] == "button":
                     if el["x"] <= click_x <= el["x"] + el["w"] and el["y"] <= click_y <= el["y"] + el["h"]:
@@ -219,16 +241,16 @@ printやbuttonの最初に "名前" を追加します。
             msg = "🚨 エラーが発生しました:\n"
             if "NameError" in err_str: msg += "名前エラー: 文字や名前を「\" \"」で囲み忘れていませんか？"
             elif "SyntaxError" in err_str: msg += "文法エラー: カッコ「()」や「:」の忘れがないか確認してください。"
-            elif "IndentationError" in err_str: msg += "インデントエラー: funやRepeatの下はスペースで字下げしてください。"
-            elif "TypeError" in err_str: msg += "引数エラー: カッコの中に入れる情報の数が間違っています。"
+            elif "IndentationError" in err_str: msg += "インデントエラー: keyやfunの下はスペースで字下げしてください。"
             else: msg += "原因不明のエラーです。文法を確認してください。\n" + err_str.split('\n')[-3]
             error_el.innerText = msg
 
-        # --- 実行ボタンとメインループ ---
+        # ユーザーが使える機能を登録
         original_language_globals = {
             "screen": screen, "print": custom_print, "button": button, "erase": erase,
             "move": move, "random": custom_random, "wait": wait, "infinite": infinite,
-            "RED": RED, "YELLOW": YELLOW, "BLUE": BLUE, "GREEN": GREEN, "BLACK": BLACK, "WHITE": WHITE
+            "RED": RED, "YELLOW": YELLOW, "BLUE": BLUE, "GREEN": GREEN, "BLACK": BLACK, "WHITE": WHITE,
+            "register_key": register_key, "audio": AudioController() # 音声機能を追加
         }
 
         async def game_loop(run_id):
@@ -245,7 +267,6 @@ printやbuttonの最初に "名前" を追加します。
                 ctx.fillStyle = WHITE
                 ctx.fillRect(0, 0, canvas.width, canvas.height)
                 
-                # 1. アニメーションの計算
                 for name in list(animations.keys()):
                     anim = animations[name]
                     anim["elapsed"] += dt
@@ -266,7 +287,6 @@ printやbuttonの最初に "名前" を追加します。
                         elements[name]["x"] = sx + (ex - sx) * progress
                         elements[name]["y"] = sy + (ey - sy) * progress
                         
-                # 2. 画面の描画処理
                 for name, el in elements.items():
                     if el["type"] == "text":
                         ctx.fillStyle = el["color"]
@@ -287,7 +307,7 @@ printやbuttonの最初に "名前" を追加します。
                         ctx.textAlign = "left"
                         ctx.textBaseline = "alphabetic"
                 
-                await asyncio.sleep(0.016) # 約60FPSで更新
+                await asyncio.sleep(0.016)
 
         async def execute_user_code(run_id):
             try:
@@ -303,6 +323,7 @@ printやbuttonの最初に "名前" を追加します。
             
             elements.clear()
             animations.clear()
+            key_events.clear() # 実行ごとにキーの記憶もリセット
             ctx.clearRect(0, 0, canvas.width, canvas.height)
             canvas.width, canvas.height = 0, 0
             
@@ -313,7 +334,6 @@ printやbuttonの最初に "名前" を追加します。
             
             try:
                 exec(code, original_language_globals)
-                # 画面を描き続けるループと、ユーザーのコードを同時にスタート！
                 asyncio.ensure_future(game_loop(current_run_id))
                 asyncio.ensure_future(execute_user_code(current_run_id))
             except Exception:
