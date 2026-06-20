@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>My Original Language Editor</title>
+    <title>My Original Language Game Engine</title>
     <link rel="stylesheet" href="https://pyscript.net/releases/2026.1.1/core.css" />
     <script type="module" src="https://pyscript.net/releases/2026.1.1/core.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
@@ -53,42 +53,75 @@
             extraKeys: { "Enter": "newlineAndIndent" }
         });
         
-        window.editor.setValue(`screen(500, 400)
+        // ★新機能をたっぷり使ったゲームのサンプルコードです！
+        window.editor.setValue(`screen(600, 400)
+screen_color(GREEN) # 背景を緑に！
 
-print("info", "右側の画面をクリックしてから、キーを押してね！", (10, 30), 16, BLUE)
-print("player", "🚗", (200, 150), 60, BLACK)
+print("info", "画面をクリックしてから【矢印キー】で丸を動かしてね！", (10, 20), 16, WHITE)
+
+# プレイヤー（青い円）と、宝箱（黄色い四角）を作ります
+circle("player", (100, 200), 20, BLUE)
+rect("treasure", (450, 180), (40, 40), YELLOW, BLACK)
+
+# 衝突を常にチェックする関数
+fun check():
+    if touch("player", "treasure"):
+        text_change("info", "🎉 宝箱をゲットしました！")
+        audio.play("https://www.soundjay.com/buttons/sounds/button-10.mp3")
+        erase("treasure")
+
+key(RIGHT):
+    # 現在の座標を取得して、右に動かします
+    now_x = get_x("player")
+    now_y = get_y("player")
+    move("player", ((now_x, now_y), (now_x + 30, now_y), 0.1), 1)
+    wait(0.1, {check}) # 動いている間（0.1秒間）ぶつかったかチェックし続ける
+
+key(LEFT):
+    now_x = get_x("player")
+    now_y = get_y("player")
+    move("player", ((now_x, now_y), (now_x - 30, now_y), 0.1), 1)
+    wait(0.1, {check})
 
 key(UP):
-    move("player", ((200, 150), (200, 50), 0.5), 1)
+    now_x = get_x("player")
+    now_y = get_y("player")
+    move("player", ((now_x, now_y), (now_x, now_y - 30), 0.1), 1)
+    wait(0.1, {check})
 
 key(DOWN):
-    move("player", ((200, 50), (200, 150), 0.5), 1)
-
-key(A):
-    print("msg", "クラクション！", (200, 250), 20, RED)
-    audio.play("https://www.soundjay.com/buttons/sounds/button-10.mp3")
-    wait(1)
-    erase("msg")
+    now_x = get_x("player")
+    now_y = get_y("player")
+    move("player", ((now_x, now_y), (now_x, now_y + 30), 0.1), 1)
+    wait(0.1, {check})
 `);
 
         function showHelp() {
-            const helpText = `【新機能の使い方】\n\n① key(キーの名前):\n指定したキーが押されたときにインデントの中身を実行します。\n※実行画面（右側）を一度クリックしてからキーを押してください。\n\n② audio.play("URL")\nインターネット上にあるMP3などの音声を再生します。`;
+            const helpText = `【新しく追加された10のコマンド】
+
+① circle("名前", (X, Y), 半径, 色)
+② rect("名前", (X, Y), (幅, 高さ), 色, 枠の色)
+③ line("名前", (始点X, 始点Y), (終点X, 終点Y), 太さ, 色)
+④ text_change("名前", "新しい文字")
+⑤ color_change("名前", 新しい色)
+⑥ size_change("名前", 新しいサイズ)
+⑦ get_x("名前") / get_y("名前") -> 現在の座標(数値)を取得
+⑧ touch("名前1", "名前2") -> ぶつかっていたらTrueを返す
+⑨ screen_color(色) -> スクリーンの背景色を変更
+⑩ stop_move("名前") -> アニメーションを停止
+
+※ 行数エラーが100%正確に一致するようになりました！`;
             alert(helpText);
         }
 
+        // 行数を一切ズラさないクリーンな置換処理に変更
         window.getWrappedCode = function() {
             let code = window.editor.getValue();
-            code = code.replace(/\bfun\b/g, "def");
+            code = code.replace(/\bfun\b/g, "async def");
             code = code.replace(/\bRepeat\s*\((.*?)\)\s*:/g, "for _ in range($1):");
             code = code.replace(/\bwait\s*\(/g, "await wait(");
-            
-            // ★改修ポイント1：改行を増やさずに1行のまま翻訳するように変更しました！これでズレません。
-            code = code.replace(/\bkey\s*\(\s*([a-zA-Z0-9_]+)\s*\)\s*:/g, "def __key_$1__():");
-            
-            let lines = code.split('\n');
-            let wrapped = `async def __user_main__():\n`;
-            for(let line of lines) { wrapped += "    " + line + "\n"; }
-            return wrapped;
+            code = code.replace(/\bkey\s*\(\s*([a-zA-Z0-9_]+)\s*\)\s*:/g, "async def __key_$1__():");
+            return code;
         };
     </script>
 
@@ -100,6 +133,7 @@ key(A):
         import asyncio
         from pyscript import document, when, window
         from js import Audio
+        from pyodide.code import eval_code_async # ★最新の非同期実行システム
 
         canvas = document.getElementById("game-canvas")
         ctx = canvas.getContext("2d")
@@ -107,6 +141,7 @@ key(A):
 
         is_screen_ready = False
         current_run_id = 0
+        bg_color_canvas = "white"
         
         elements = {}
         animations = {}
@@ -115,11 +150,23 @@ key(A):
         RED, YELLOW, BLUE, GREEN, BLACK, WHITE = "red", "yellow", "blue", "green", "black", "white"
         infinite = -1
 
+        # 非同期関数と通常関数を安全に呼び出すヘルパー
+        def call_user_func(func):
+            if callable(func):
+                if asyncio.iscoroutinefunction(func):
+                    asyncio.ensure_future(func())
+                else:
+                    func()
+
         def screen(w, h):
             global is_screen_ready
             canvas.width = w
             canvas.height = h
             is_screen_ready = True
+
+        def screen_color(color):
+            global bg_color_canvas
+            bg_color_canvas = color
 
         def custom_print(name, text, pos, size, color):
             if not is_screen_ready: raise Exception("画面未設定")
@@ -141,6 +188,52 @@ key(A):
                 "border_color": border_color, "action": action
             }
 
+        # --- 新図形コマンド群 ---
+        def circle(name, pos, r, color):
+            if not is_screen_ready: raise Exception("画面未設定")
+            elements[name] = {"type": "circle", "x": pos[0], "y": pos[1], "r": r, "color": color}
+
+        def rect(name, pos, size, color, border_color=None):
+            if not is_screen_ready: raise Exception("画面未設定")
+            elements[name] = {"type": "rect", "x": pos[0], "y": pos[1], "w": size[0], "h": size[1], "color": color, "border_color": border_color}
+
+        def line(name, pos1, pos2, size, color):
+            if not is_screen_ready: raise Exception("画面未設定")
+            elements[name] = {"type": "line", "x": pos1[0], "y": pos1[1], "x2": pos2[0], "y2": pos2[1], "size": size, "color": color}
+
+        # --- 新状態変更コマンド群 ---
+        def text_change(name, new_text):
+            if name in elements and "text" in elements[name]: elements[name]["text"] = new_text
+
+        def color_change(name, new_color):
+            if name in elements:
+                if "color" in elements[name]: elements[name]["color"] = new_color
+                if "bg_color" in elements[name]: elements[name]["bg_color"] = new_color
+
+        def size_change(name, new_size):
+            if name in elements:
+                if "size" in elements[name]: elements[name]["size"] = new_size
+                if "font_size" in elements[name]: elements[name]["font_size"] = new_size
+                if "r" in elements[name]: elements[name]["r"] = new_size
+
+        def get_x(name): return elements[name]["x"] if name in elements else 0
+        def get_y(name): return elements[name]["y"] if name in elements else 0
+        def stop_move(name):
+            if name in animations: del animations[name]
+
+        # --- 新衝突判定（タッチ）コマンド ---
+        def touch(name1, name2):
+            if name1 not in elements or name2 not in elements: return False
+            def get_box(el):
+                if el["type"] in ["button", "rect"]: return el["x"], el["y"], el["w"], el["h"]
+                elif el["type"] == "circle": return el["x"] - el["r"], el["y"] - el["r"], el["r"] * 2, el["r"] * 2
+                elif el["type"] == "text": return el["x"], el["y"], el["size"] * len(str(el["text"])) * 0.6, el["size"]
+                elif el["type"] == "line": return min(el["x"], el["x2"]), min(el["y"], el["y2"]), abs(el["x"] - el["x2"]), abs(el["y"] - el["y2"])
+                return 0, 0, 0, 0
+            x1, y1, w1, h1 = get_box(elements[name1])
+            x2, y2, w2, h2 = get_box(elements[name2])
+            return x1 < x2 + w2 and x2 < x1 + w1 and y1 < y2 + h2 and y2 < y1 + h1
+
         def erase(name):
             if name in elements: del elements[name]
             if name in animations: del animations[name]
@@ -159,9 +252,7 @@ key(A):
             if isinstance(func, set): func = list(func)[0]
             start_time = time.time()
             while time.time() - start_time < seconds:
-                if callable(func):
-                    try: func()
-                    except Exception: show_japanese_error()
+                call_user_func(func)
                 await asyncio.sleep(0.016)
 
         class AudioController:
@@ -169,8 +260,7 @@ key(A):
                 try:
                     a = Audio.new(url)
                     a.play()
-                except Exception:
-                    custom_print("audio_err", "🚨 音声エラー: URLを確認してください", (10, 380), 14, RED)
+                except Exception: pass
 
         @when("keydown", "body")
         def on_keydown(event):
@@ -180,7 +270,7 @@ key(A):
             k = key_map.get(k, k)
             if k in key_events:
                 if k in ["UP", "DOWN", "LEFT", "RIGHT", "SPACE"]: event.preventDefault()
-                try: key_events[k]()
+                try: call_user_func(key_events[k])
                 except Exception: show_japanese_error()
 
         @when("click", "#game-canvas")
@@ -193,62 +283,42 @@ key(A):
                 if el["type"] == "button":
                     if el["x"] <= click_x <= el["x"] + el["w"] and el["y"] <= click_y <= el["y"] + el["h"]:
                         action = el.get("action")
-                        if callable(action):
-                            try: action()
-                            except Exception: show_japanese_error()
+                        call_user_func(action)
                         break
 
-        # ==========================================
-        # ★改修ポイント2：エラー行数判定と閉じ忘れ専用メッセージ
-        # ==========================================
+        # 精密になった日本語エラー特定システム
         def show_japanese_error():
             error_el.style.display = "block"
-            
             exc_type, exc_value, exc_tb = sys.exc_info()
             err_str = traceback.format_exc()
             
-            # ユーザーが実際に書いた行数を取得しておく
-            user_code = window.editor.getValue()
-            user_lines_count = len(user_code.split('\n'))
-            
             error_line = "不明"
-            
-            # 行数の計算
             if isinstance(exc_value, SyntaxError) and exc_value.lineno is not None:
-                calc_line = exc_value.lineno - 1
-                if calc_line > user_lines_count:
-                    error_line = f"一番最後（{user_lines_count}行目付近）"
-                else:
-                    error_line = str(max(1, calc_line))
+                error_line = str(exc_value.lineno)
             else:
                 tb_list = traceback.extract_tb(exc_tb)
                 for tb in reversed(tb_list):
                     if '<string>' in tb.filename or '<exec>' in tb.filename:
-                        calc_line = tb.lineno - 1
-                        if calc_line > user_lines_count:
-                            error_line = f"一番最後（{user_lines_count}行目付近）"
-                        else:
-                            error_line = str(max(1, calc_line))
+                        error_line = str(tb.lineno)
                         break
 
-            msg = f"🚨 エラーが発生しました（ {error_line}行目 付近）:\n"
-            
-            # エラー内容の翻訳
-            if "was never closed" in err_str or "unexpected EOF" in err_str:
-                msg += "閉じ忘れエラー: カッコ「()」や「[]」、または文字を囲む「\"」が閉じられていません。\n※一番最後のエラーが出た場合は、その上の行をたどって閉じ忘れがないか探してください。"
-            elif "NameError" in err_str: msg += "名前エラー: 文字や名前を「\" \"」で囲み忘れていませんか？スペルミスにも注意してください。"
+            msg = f"🚨 エラーが発生しました（ {error_line}行目 ）:\n"
+            if "was never closed" in err_str or "unexpected EOF" in err_str or "unclosed string" in err_str:
+                msg += "閉じ忘れエラー: カッコ「()」「[]」や、文字を囲む「\"」の閉じ忘れがあります。エラー行の上の方を優しく確認してください。"
+            elif "NameError" in err_str: msg += "名前エラー: 文字や名前を「\" \"」で囲み忘れていませんか？スペルミス（大文字・小文字）にも注意してください。"
             elif "SyntaxError" in err_str: msg += "文法エラー: カッコ「()」や「:」の忘れがないか、全角スペースが混ざっていないか確認してください。"
-            elif "IndentationError" in err_str: msg += "インデントエラー: keyやfunの下は、半角スペースで字下げ（インデント）してください。"
-            elif "TypeError" in err_str: msg += "引数エラー: カッコの中に入れる情報の数が間違っています。カンマ「,」の数を確認してください。"
+            elif "IndentationError" in err_str: msg += "インデントエラー: keyやfunの下は、半角スペース4つで綺麗に字下げ（インデント）してください。"
+            elif "TypeError" in err_str: msg += "引数エラー: カッコの中に入れる情報の数やコンマ「,」の位置が間違っています。"
             elif "画面未設定" in err_str: msg += "画面エラー: 1行目に screen(幅, 高さ) を書いてください。"
-            else: msg += "原因不明のエラーです。文法を確認してください。\n" + err_str.split('\n')[-3]
-            
+            else: msg += "エラーを検出しました。文法を確認してください。\n" + err_str.split('\n')[-3]
             error_el.innerText = msg
-        # ==========================================
 
+        # 言語グローバル登録
         original_language_globals = {
-            "screen": screen, "print": custom_print, "button": button, "erase": erase,
-            "move": move, "random": custom_random, "wait": wait, "infinite": infinite,
+            "screen": screen, "screen_color": screen_color, "print": custom_print, "button": button, 
+            "circle": circle, "rect": rect, "line": line, "text_change": text_change, "color_change": color_change,
+            "size_change": size_change, "get_x": get_x, "get_y": get_y, "touch": touch, "stop_move": stop_move,
+            "erase": erase, "move": move, "random": custom_random, "wait": wait, "infinite": infinite,
             "RED": RED, "YELLOW": YELLOW, "BLUE": BLUE, "GREEN": GREEN, "BLACK": BLACK, "WHITE": WHITE,
             "audio": AudioController()
         }
@@ -259,19 +329,18 @@ key(A):
                 if not is_screen_ready:
                     await asyncio.sleep(0.016)
                     continue
-                
                 current_time = time.time()
                 dt = current_time - last_time
                 last_time = current_time
                 
-                ctx.fillStyle = WHITE
+                # 背景色で塗りつぶし
+                ctx.fillStyle = bg_color_canvas
                 ctx.fillRect(0, 0, canvas.width, canvas.height)
                 
                 for name in list(animations.keys()):
                     anim = animations[name]
                     anim["elapsed"] += dt
                     progress = anim["elapsed"] / anim["duration"]
-                    
                     if progress >= 1.0:
                         if anim["repeat_total"] == infinite or anim["repeat_current"] < anim["repeat_total"] - 1:
                             anim["elapsed"] = 0.0
@@ -280,7 +349,6 @@ key(A):
                         else:
                             progress = 1.0
                             del animations[name]
-                            
                     if name in elements:
                         sx, sy = anim["start"]
                         ex, ey = anim["end"]
@@ -292,6 +360,25 @@ key(A):
                         ctx.fillStyle = el["color"]
                         ctx.font = f"bold {el['size']}px sans-serif"
                         ctx.fillText(str(el["text"]), el["x"], el["y"] + el["size"])
+                    elif el["type"] == "circle":
+                        ctx.beginPath()
+                        ctx.arc(el["x"], el["y"], el["r"], 0, 2 * 3.14159)
+                        ctx.fillStyle = el["color"]
+                        ctx.fill()
+                    elif el["type"] == "rect":
+                        ctx.fillStyle = el["color"]
+                        ctx.fillRect(el["x"], el["y"], el["w"], el["h"])
+                        if el["border_color"]:
+                            ctx.strokeStyle = el["border_color"]
+                            ctx.lineWidth = 2
+                            ctx.strokeRect(el["x"], el["y"], el["w"], el["h"])
+                    elif el["type"] == "line":
+                        ctx.beginPath()
+                        ctx.moveTo(el["x"], el["y"])
+                        ctx.lineTo(el["x2"], el["y2"])
+                        ctx.lineWidth = el["size"]
+                        ctx.strokeStyle = el["color"]
+                        ctx.stroke()
                     elif el["type"] == "button":
                         ctx.fillStyle = el["bg_color"]
                         ctx.fillRect(el["x"], el["y"], el["w"], el["h"])
@@ -306,45 +393,45 @@ key(A):
                         ctx.fillText(str(el["text"]), el["x"] + el["w"]/2, el["y"] + el["h"]/2)
                         ctx.textAlign = "left"
                         ctx.textBaseline = "alphabetic"
-                
                 await asyncio.sleep(0.016)
 
-        async def execute_user_code(run_id):
-            try:
-                await original_language_globals["__user_main__"]()
-            except Exception:
-                show_japanese_error()
-
-        @when("click", "#btn-run")
         def run_code(event):
-            global current_run_id, is_screen_ready
+            asyncio.ensure_future(run_code_async())
+
+        async def run_code_async():
+            global current_run_id, is_screen_ready, bg_color_canvas
             current_run_id += 1
             is_screen_ready = False
+            bg_color_canvas = "white"
             
             elements.clear()
             animations.clear()
             key_events.clear()
             ctx.clearRect(0, 0, canvas.width, canvas.height)
             canvas.width, canvas.height = 0, 0
-            
             error_el.style.display = "none"
-            error_el.innerText = ""
             
+            # クリーンな変換後コードを取得
             code = window.getWrappedCode()
             
+            # グローバル空間を毎回リセットして汚染を防ぐ
+            run_globals = original_language_globals.copy()
+            
             try:
-                exec(code, original_language_globals)
+                # ★大改修：トップレベルawait対応の非同期リアルタイム実行
+                await eval_code_async(code, globals=run_globals)
                 
-                # ★改修ポイント1の続き：ここでキーの関数を自動登録する
-                for name, obj in original_language_globals.items():
+                # キーイベントを自動回収
+                for name, obj in list(run_globals.items()):
                     if name.startswith("__key_") and callable(obj):
-                        k_name = name.replace("__key_", "")
+                        k_name = name.replace("__key_", "").upper()
                         key_events[k_name] = obj
                         
                 asyncio.ensure_future(game_loop(current_run_id))
-                asyncio.ensure_future(execute_user_code(current_run_id))
             except Exception:
                 show_japanese_error()
+
+        document.getElementById("btn-run").onclick = run_code
     </script>
 </body>
 </html>
