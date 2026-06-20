@@ -72,15 +72,7 @@ key(A):
 `);
 
         function showHelp() {
-            const helpText = `【新機能の使い方】
-
-① key(キーの名前):
-指定したキーが押されたときにインデントの中身を実行します。
-※実行画面（右側）を一度クリックしてからキーを押してください。
-使えるキー：A, B, Cなどのアルファベット、UP, DOWN, LEFT, RIGHT, SPACE, ENTER
-
-② audio.play("URL")
-インターネット上にあるMP3などの音声を再生します。`;
+            const helpText = `【新機能の使い方】\n\n① key(キーの名前):\n指定したキーが押されたときにインデントの中身を実行します。\n※実行画面（右側）を一度クリックしてからキーを押してください。\n\n② audio.play("URL")\nインターネット上にあるMP3などの音声を再生します。`;
             alert(helpText);
         }
 
@@ -89,7 +81,9 @@ key(A):
             code = code.replace(/\bfun\b/g, "def");
             code = code.replace(/\bRepeat\s*\((.*?)\)\s*:/g, "for _ in range($1):");
             code = code.replace(/\bwait\s*\(/g, "await wait(");
-            code = code.replace(/\bkey\s*\(\s*([a-zA-Z0-9_]+)\s*\)\s*:/g, "@register_key('$1')\ndef __key_$1__():");
+            
+            // ★改修ポイント1：改行を増やさずに1行のまま翻訳するように変更しました！これでズレません。
+            code = code.replace(/\bkey\s*\(\s*([a-zA-Z0-9_]+)\s*\)\s*:/g, "def __key_$1__():");
             
             let lines = code.split('\n');
             let wrapped = `async def __user_main__():\n`;
@@ -170,12 +164,6 @@ key(A):
                     except Exception: show_japanese_error()
                 await asyncio.sleep(0.016)
 
-        def register_key(k_name):
-            def decorator(func):
-                key_events[k_name.upper()] = func
-                return func
-            return decorator
-
         class AudioController:
             def play(self, url):
                 try:
@@ -211,33 +199,44 @@ key(A):
                         break
 
         # ==========================================
-        # ★大改修：エラー行数特定システム
+        # ★改修ポイント2：エラー行数判定と閉じ忘れ専用メッセージ
         # ==========================================
         def show_japanese_error():
             error_el.style.display = "block"
             
-            # 発生したエラーの細かい情報（種類、内容、場所）を取得
             exc_type, exc_value, exc_tb = sys.exc_info()
             err_str = traceback.format_exc()
             
+            # ユーザーが実際に書いた行数を取得しておく
+            user_code = window.editor.getValue()
+            user_lines_count = len(user_code.split('\n'))
+            
             error_line = "不明"
             
-            # 文法エラー（SyntaxError）の場合、直接行数が記録されている
+            # 行数の計算
             if isinstance(exc_value, SyntaxError) and exc_value.lineno is not None:
-                # 隠しコードの分（1行）を引いて、エディタ上の行数に戻す
-                error_line = str(max(1, exc_value.lineno - 1))
+                calc_line = exc_value.lineno - 1
+                if calc_line > user_lines_count:
+                    error_line = f"一番最後（{user_lines_count}行目付近）"
+                else:
+                    error_line = str(max(1, calc_line))
             else:
-                # それ以外のエラー（スペルミスや引数不足など）の場合、履歴を遡ってユーザーのコードを探す
                 tb_list = traceback.extract_tb(exc_tb)
                 for tb in reversed(tb_list):
-                    # '<string>' や '<exec>' が、ユーザーが実行したコードの目印
                     if '<string>' in tb.filename or '<exec>' in tb.filename:
-                        error_line = str(max(1, tb.lineno - 1))
+                        calc_line = tb.lineno - 1
+                        if calc_line > user_lines_count:
+                            error_line = f"一番最後（{user_lines_count}行目付近）"
+                        else:
+                            error_line = str(max(1, calc_line))
                         break
 
             msg = f"🚨 エラーが発生しました（ {error_line}行目 付近）:\n"
             
-            if "NameError" in err_str: msg += "名前エラー: 文字や名前を「\" \"」で囲み忘れていませんか？スペルミスにも注意してください。"
+            # エラー内容の翻訳
+            if "was never closed" in err_str or "unexpected EOF" in err_str:
+                msg += "閉じ忘れエラー: カッコ「()」や「[]」、または文字を囲む「\"」が閉じられていません。\n※一番最後のエラーが出た場合は、その上の行をたどって閉じ忘れがないか探してください。"
+            elif "NameError" in err_str: msg += "名前エラー: 文字や名前を「\" \"」で囲み忘れていませんか？スペルミスにも注意してください。"
             elif "SyntaxError" in err_str: msg += "文法エラー: カッコ「()」や「:」の忘れがないか、全角スペースが混ざっていないか確認してください。"
             elif "IndentationError" in err_str: msg += "インデントエラー: keyやfunの下は、半角スペースで字下げ（インデント）してください。"
             elif "TypeError" in err_str: msg += "引数エラー: カッコの中に入れる情報の数が間違っています。カンマ「,」の数を確認してください。"
@@ -251,7 +250,7 @@ key(A):
             "screen": screen, "print": custom_print, "button": button, "erase": erase,
             "move": move, "random": custom_random, "wait": wait, "infinite": infinite,
             "RED": RED, "YELLOW": YELLOW, "BLUE": BLUE, "GREEN": GREEN, "BLACK": BLACK, "WHITE": WHITE,
-            "register_key": register_key, "audio": AudioController()
+            "audio": AudioController()
         }
 
         async def game_loop(run_id):
@@ -335,6 +334,13 @@ key(A):
             
             try:
                 exec(code, original_language_globals)
+                
+                # ★改修ポイント1の続き：ここでキーの関数を自動登録する
+                for name, obj in original_language_globals.items():
+                    if name.startswith("__key_") and callable(obj):
+                        k_name = name.replace("__key_", "")
+                        key_events[k_name] = obj
+                        
                 asyncio.ensure_future(game_loop(current_run_id))
                 asyncio.ensure_future(execute_user_code(current_run_id))
             except Exception:
