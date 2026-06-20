@@ -22,11 +22,11 @@
         
         #display-container { flex: 1; display: flex; flex-direction: column; background-color: #252526; border: 1px solid #3e3e42; border-radius: 4px; position: relative; overflow: hidden;}
         
-        /* ★オートフォーカスが分かりやすいように、選択中はオレンジの枠が出るようにしました */
+        /* ★オートフォーカス！画面をクリックするか実行するとオレンジに光ります */
         #canvas-wrapper { flex: 1; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 10px; outline: none; transition: 0.2s; border: 3px solid transparent; border-radius: 4px;}
         #canvas-wrapper:focus { border: 3px solid #ff9800; background-color: #2c2c2c; }
         
-        canvas { background-color: white; box-shadow: 0 4px 8px rgba(0,0,0,0.5); cursor: default; }
+        canvas { background-color: white; box-shadow: 0 4px 8px rgba(0,0,0,0.5); cursor: pointer; }
         #error-console { display: none; background-color: #3b0000; color: #ff6b6b; border-top: 2px solid #ff4c4c; padding: 10px; font-family: monospace; font-size: 14px; white-space: pre-wrap; max-height: 150px; overflow-y: auto; }
     </style>
 </head>
@@ -43,7 +43,7 @@
         </div>
 
         <div id="display-container">
-            <div id="canvas-wrapper" tabindex="0">
+            <div id="canvas-wrapper" tabindex="0" onclick="this.focus()">
                 <canvas id="game-canvas" width="0" height="0"></canvas>
             </div>
             <div id="error-console"></div>
@@ -56,28 +56,28 @@
             extraKeys: { "Enter": "newlineAndIndent" }
         });
         
-        // ★数字キーとテンキーのサンプルです！実行すると枠がオレンジになり即操作できます。
+        // ★数字キーもテンキーも、プレイ中のエラーもすべて対応したサンプルです！
         window.editor.setValue(`screen(600, 400)
 screen_color(BLACK)
 
-print("info", "【1】か【テンキーの1】を押すと弾を発射！", (20, 30), 20, WHITE)
+print("info", "【1】か【テンキーの1】を押すと弾が発射されます！", (20, 30), 18, WHITE)
 rect("player", (50, 180), (40, 40), BLUE)
 
 # 普通の数字キー「1」が押されたとき
 key(1):
     circle("bullet1", (100, 200), 10, YELLOW)
-    move("bullet1", ((100, 200), (600, 200), 1), 1)
-    wait(1)
+    move("bullet1", ((100, 200), (600, 200), 0.5), 1)
+    wait(0.5)
     erase("bullet1")
 
 # テンキーの「1」が押されたとき
 key(TEN1):
     circle("bullet2", (100, 200), 10, RED)
-    move("bullet2", ((100, 200), (600, 200), 0.5), 1)
-    wait(0.5)
+    move("bullet2", ((100, 200), (600, 200), 0.2), 1)
+    wait(0.2)
     erase("bullet2")
 
-# 矢印キーも完璧に動きます
+# 矢印キーで移動
 key(UP):
     now_x = get_x("player")
     now_y = get_y("player")
@@ -87,6 +87,10 @@ key(DOWN):
     now_x = get_x("player")
     now_y = get_y("player")
     move("player", ((now_x, now_y), (now_x, now_y + 40), 0.1), 1)
+
+# わざと存在しない名前を指定して、プレイ中にエラーを出してみるテスト（Aキーを押してみて！）
+key(A):
+    now_x = get_x("honzaisinai_namae") 
 `);
 
         function showHelp() {
@@ -100,7 +104,7 @@ key(DOWN):
             code = code.replace(/\bRepeat\s*\((.*?)\)\s*:/g, "for _ in range($1):");
             code = code.replace(/\bwait\s*\(/g, "await wait(");
             
-            // ★数字キーでエラーにならないよう、裏側で「__key_K_」という安全な名前に変換します
+            // ★数字キーのエラーを防ぐため、裏側で「__key_K_」という安全な名前に変換
             code = code.replace(/\bkey\s*\(\s*([a-zA-Z0-9_]+)\s*\)\s*:/g, "async def __key_K_$1__():");
             return code;
         };
@@ -122,6 +126,7 @@ key(DOWN):
 
         is_screen_ready = False
         current_run_id = 0
+        has_error = False # ★プレイ中のエラーでゲームを止めるためのフラグ
         bg_color_canvas = "white"
         
         elements = {}
@@ -131,12 +136,17 @@ key(DOWN):
         RED, YELLOW, BLUE, GREEN, BLACK, WHITE = "red", "yellow", "blue", "green", "black", "white"
         infinite = -1
 
-        def call_user_func(func):
-            if callable(func):
+        # ★プレイ中のエラーを確実にキャッチする魔法の関数
+        async def safe_call(func):
+            global has_error
+            if has_error: return
+            try:
                 if asyncio.iscoroutinefunction(func):
-                    asyncio.ensure_future(func())
+                    await func()
                 else:
                     func()
+            except Exception:
+                show_japanese_error()
 
         def screen(w, h):
             global is_screen_ready
@@ -149,11 +159,9 @@ key(DOWN):
             bg_color_canvas = color
 
         def custom_print(name, text, pos, size, color):
-            if not is_screen_ready: raise Exception("画面未設定")
             elements[name] = {"type": "text", "text": text, "x": pos[0], "y": pos[1], "size": size, "color": color}
 
         def button(name, pos, size, text, font_size, text_color, bg_color, arg1=None, arg2=None):
-            if not is_screen_ready: raise Exception("画面未設定")
             x, y = pos
             w, h = size
             border_color, action = None, None
@@ -169,15 +177,12 @@ key(DOWN):
             }
 
         def circle(name, pos, r, color):
-            if not is_screen_ready: raise Exception("画面未設定")
             elements[name] = {"type": "circle", "x": pos[0], "y": pos[1], "r": r, "color": color}
 
         def rect(name, pos, size, color, border_color=None):
-            if not is_screen_ready: raise Exception("画面未設定")
             elements[name] = {"type": "rect", "x": pos[0], "y": pos[1], "w": size[0], "h": size[1], "color": color, "border_color": border_color}
 
         def line(name, pos1, pos2, size, color):
-            if not is_screen_ready: raise Exception("画面未設定")
             elements[name] = {"type": "line", "x": pos1[0], "y": pos1[1], "x2": pos2[0], "y2": pos2[1], "size": size, "color": color}
 
         def text_change(name, new_text):
@@ -194,8 +199,8 @@ key(DOWN):
                 if "font_size" in elements[name]: elements[name]["font_size"] = new_size
                 if "r" in elements[name]: elements[name]["r"] = new_size
 
-        def get_x(name): return elements[name]["x"] if name in elements else 0
-        def get_y(name): return elements[name]["y"] if name in elements else 0
+        def get_x(name): return elements[name]["x"]
+        def get_y(name): return elements[name]["y"]
         def stop_move(name):
             if name in animations: del animations[name]
 
@@ -229,7 +234,9 @@ key(DOWN):
             if isinstance(func, set): func = list(func)[0]
             start_time = time.time()
             while time.time() - start_time < seconds:
-                call_user_func(func)
+                if has_error: break
+                if callable(func):
+                    await safe_call(func)
                 await asyncio.sleep(0.016)
 
         class AudioController:
@@ -239,31 +246,29 @@ key(DOWN):
                     a.play()
                 except Exception: pass
 
-        # ★大改修：ゲーム画面自体にキーボードイベントを設定し、テンキーにも対応！
+        # ★キーボード入力判定
         @when("keydown", "#canvas-wrapper")
         def on_keydown(event):
-            if not is_screen_ready: return
+            if not is_screen_ready or has_error: return
             
-            k_code = event.code  # Numpad1, Digit1, ArrowUp など
-            k_key = event.key.upper() # 1, A, ARROWUP など
+            k_code = getattr(event, "code", "")
+            k_key = getattr(event, "key", "").upper()
             
             mapped_key = None
-            
-            # テンキーかどうかの判定
             if k_code.startswith("Numpad"):
-                mapped_key = "TEN" + k_code.replace("Numpad", "").upper()
+                mapped_key = "TEN" + k_code.replace("NUMPAD", "").upper()
             else:
                 key_map = {"ARROWUP": "UP", "ARROWDOWN": "DOWN", "ARROWLEFT": "LEFT", "ARROWRIGHT": "RIGHT", " ": "SPACE", "ESCAPE": "ESC"}
                 mapped_key = key_map.get(k_key, k_key)
                 
             if mapped_key in key_events:
                 if mapped_key in ["UP", "DOWN", "LEFT", "RIGHT", "SPACE"]: event.preventDefault()
-                try: call_user_func(key_events[mapped_key])
-                except Exception: show_japanese_error()
+                # ★エラーを確実にキャッチする
+                asyncio.ensure_future(safe_call(key_events[mapped_key]))
 
         @when("click", "#game-canvas")
         def on_canvas_click(event):
-            if not is_screen_ready: return
+            if not is_screen_ready or has_error: return
             rect = canvas.getBoundingClientRect()
             click_x = event.clientX - rect.left
             click_y = event.clientY - rect.top
@@ -271,12 +276,16 @@ key(DOWN):
                 if el["type"] == "button":
                     if el["x"] <= click_x <= el["x"] + el["w"] and el["y"] <= click_y <= el["y"] + el["h"]:
                         action = el.get("action")
-                        call_user_func(action)
+                        if callable(action):
+                            asyncio.ensure_future(safe_call(action))
                         break
 
-        # ★大改修：wait()に関するエラーメッセージを明確にしました
+        # ★エラー解析の超進化（本当の原因も教えます）
         def show_japanese_error():
+            global has_error
+            has_error = True
             error_el.style.display = "block"
+            
             exc_type, exc_value, exc_tb = sys.exc_info()
             err_str = traceback.format_exc()
             
@@ -290,19 +299,19 @@ key(DOWN):
                         error_line = str(tb.lineno)
                         break
 
-            msg = f"🚨 エラーが発生しました（ {error_line}行目 ）:\n"
+            msg = f"🚨 エラーが発生しました（ {error_line}行目 付近）:\n"
             
-            if "outside function" in err_str or "outside async function" in err_str:
-                msg += "関数エラー: wait() は fun の中か、key() の中でしか使えません。普通の def の中には書けないので注意してください。"
-            elif "was never closed" in err_str or "unexpected EOF" in err_str or "unclosed string" in err_str:
-                msg += "閉じ忘れエラー: カッコ「()」「[]」や、文字を囲む「\"」の閉じ忘れがあります。エラー行の上の方を探してみてください。"
-            elif "NameError" in err_str: msg += "名前エラー: 文字や名前を「\" \"」で囲み忘れていませんか？スペルミスにも注意してください。"
+            if "KeyError" in err_str: msg += "要素見つからないエラー: get_xなどで指定した「名前」の図形や文字が存在しません。スペルミスや、作成前に取得しようとしていないか確認してください。"
+            elif "outside function" in err_str or "outside async function" in err_str: msg += "関数エラー: wait() は fun の中か、key() の中でしか使えません。"
+            elif "was never closed" in err_str or "unexpected EOF" in err_str or "unclosed string" in err_str: msg += "閉じ忘れエラー: カッコ「()」「[]」や、文字を囲む「\"」が閉じていません。"
+            elif "NameError" in err_str: msg += "名前エラー: 文字や名前を「\" \"」で囲み忘れていませんか？"
             elif "SyntaxError" in err_str: msg += "文法エラー: カッコ「()」や「:」の忘れがないか、全角スペースが混ざっていないか確認してください。"
-            elif "IndentationError" in err_str: msg += "インデントエラー: keyやfunの下は、半角スペース4つで綺麗に字下げ（インデント）してください。"
-            elif "TypeError" in err_str: msg += "引数エラー: カッコの中に入れる情報の数やコンマ「,」の位置が間違っています。"
-            elif "画面未設定" in err_str: msg += "画面エラー: 1行目に screen(幅, 高さ) を書いてください。"
-            else: msg += "エラーを検出しました。文法を確認してください。\n" + err_str.split('\n')[-3]
+            elif "IndentationError" in err_str: msg += "インデントエラー: keyやfunの下は、半角スペース4つで字下げしてください。"
+            elif "TypeError" in err_str: msg += "引数エラー: カッコの中のカンマ「,」の数や情報が間違っています。"
+            else: msg += "エラーを検出しました。"
             
+            # 本当のエラーメッセージも表示してデバッグしやすくする
+            msg += f"\n\n[システム詳細]\n{str(exc_value)}"
             error_el.innerText = msg
 
         original_language_globals = {
@@ -316,7 +325,7 @@ key(DOWN):
 
         async def game_loop(run_id):
             last_time = time.time()
-            while run_id == current_run_id:
+            while run_id == current_run_id and not has_error:
                 if not is_screen_ready:
                     await asyncio.sleep(0.016)
                     continue
@@ -389,9 +398,10 @@ key(DOWN):
             asyncio.ensure_future(run_code_async())
 
         async def run_code_async():
-            global current_run_id, is_screen_ready, bg_color_canvas
+            global current_run_id, is_screen_ready, bg_color_canvas, has_error
             current_run_id += 1
             is_screen_ready = False
+            has_error = False
             bg_color_canvas = "white"
             
             elements.clear()
@@ -407,7 +417,7 @@ key(DOWN):
             try:
                 await eval_code_async(code, globals=run_globals)
                 
-                # ★数字キーもテンキーも、ここで自動的に登録されます
+                # キーイベントの自動登録
                 for name, obj in list(run_globals.items()):
                     if name.startswith("__key_K_") and callable(obj):
                         k_name = name.replace("__key_K_", "").upper()
@@ -415,7 +425,7 @@ key(DOWN):
                         
                 asyncio.ensure_future(game_loop(current_run_id))
                 
-                # ★実行と同時にゲーム画面にフォーカスを当てます
+                # ★実行ボタンを押した瞬間にゲーム画面をオレンジ色にして操作可能にする！
                 document.getElementById("canvas-wrapper").focus()
             except Exception:
                 show_japanese_error()
