@@ -21,9 +21,12 @@
         .CodeMirror { flex: 1; font-family: 'Consolas', monospace; border-radius: 4px; }
         
         #display-container { flex: 1; display: flex; flex-direction: column; background-color: #252526; border: 1px solid #3e3e42; border-radius: 4px; position: relative; overflow: hidden;}
-        #canvas-wrapper { flex: 1; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 10px; outline: none; }
-        canvas { background-color: white; box-shadow: 0 4px 8px rgba(0,0,0,0.5); cursor: default; }
         
+        /* ★オートフォーカスが分かりやすいように、選択中はオレンジの枠が出るようにしました */
+        #canvas-wrapper { flex: 1; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 10px; outline: none; transition: 0.2s; border: 3px solid transparent; border-radius: 4px;}
+        #canvas-wrapper:focus { border: 3px solid #ff9800; background-color: #2c2c2c; }
+        
+        canvas { background-color: white; box-shadow: 0 4px 8px rgba(0,0,0,0.5); cursor: default; }
         #error-console { display: none; background-color: #3b0000; color: #ff6b6b; border-top: 2px solid #ff4c4c; padding: 10px; font-family: monospace; font-size: 14px; white-space: pre-wrap; max-height: 150px; overflow-y: auto; }
     </style>
 </head>
@@ -53,74 +56,52 @@
             extraKeys: { "Enter": "newlineAndIndent" }
         });
         
-        // ★新機能をたっぷり使ったゲームのサンプルコードです！
+        // ★数字キーとテンキーのサンプルです！実行すると枠がオレンジになり即操作できます。
         window.editor.setValue(`screen(600, 400)
-screen_color(GREEN) # 背景を緑に！
+screen_color(BLACK)
 
-print("info", "画面をクリックしてから【矢印キー】で丸を動かしてね！", (10, 20), 16, WHITE)
+print("info", "【1】か【テンキーの1】を押すと弾を発射！", (20, 30), 20, WHITE)
+rect("player", (50, 180), (40, 40), BLUE)
 
-# プレイヤー（青い円）と、宝箱（黄色い四角）を作ります
-circle("player", (100, 200), 20, BLUE)
-rect("treasure", (450, 180), (40, 40), YELLOW, BLACK)
+# 普通の数字キー「1」が押されたとき
+key(1):
+    circle("bullet1", (100, 200), 10, YELLOW)
+    move("bullet1", ((100, 200), (600, 200), 1), 1)
+    wait(1)
+    erase("bullet1")
 
-# 衝突を常にチェックする関数
-fun check():
-    if touch("player", "treasure"):
-        text_change("info", "🎉 宝箱をゲットしました！")
-        audio.play("https://www.soundjay.com/buttons/sounds/button-10.mp3")
-        erase("treasure")
+# テンキーの「1」が押されたとき
+key(TEN1):
+    circle("bullet2", (100, 200), 10, RED)
+    move("bullet2", ((100, 200), (600, 200), 0.5), 1)
+    wait(0.5)
+    erase("bullet2")
 
-key(RIGHT):
-    # 現在の座標を取得して、右に動かします
-    now_x = get_x("player")
-    now_y = get_y("player")
-    move("player", ((now_x, now_y), (now_x + 30, now_y), 0.1), 1)
-    wait(0.1, {check}) # 動いている間（0.1秒間）ぶつかったかチェックし続ける
-
-key(LEFT):
-    now_x = get_x("player")
-    now_y = get_y("player")
-    move("player", ((now_x, now_y), (now_x - 30, now_y), 0.1), 1)
-    wait(0.1, {check})
-
+# 矢印キーも完璧に動きます
 key(UP):
     now_x = get_x("player")
     now_y = get_y("player")
-    move("player", ((now_x, now_y), (now_x, now_y - 30), 0.1), 1)
-    wait(0.1, {check})
+    move("player", ((now_x, now_y), (now_x, now_y - 40), 0.1), 1)
 
 key(DOWN):
     now_x = get_x("player")
     now_y = get_y("player")
-    move("player", ((now_x, now_y), (now_x, now_y + 30), 0.1), 1)
-    wait(0.1, {check})
+    move("player", ((now_x, now_y), (now_x, now_y + 40), 0.1), 1)
 `);
 
         function showHelp() {
-            const helpText = `【新しく追加された10のコマンド】
-
-① circle("名前", (X, Y), 半径, 色)
-② rect("名前", (X, Y), (幅, 高さ), 色, 枠の色)
-③ line("名前", (始点X, 始点Y), (終点X, 終点Y), 太さ, 色)
-④ text_change("名前", "新しい文字")
-⑤ color_change("名前", 新しい色)
-⑥ size_change("名前", 新しいサイズ)
-⑦ get_x("名前") / get_y("名前") -> 現在の座標(数値)を取得
-⑧ touch("名前1", "名前2") -> ぶつかっていたらTrueを返す
-⑨ screen_color(色) -> スクリーンの背景色を変更
-⑩ stop_move("名前") -> アニメーションを停止
-
-※ 行数エラーが100%正確に一致するようになりました！`;
+            const helpText = `【キーボードの使い方】\n\n① key(名前):\n指定したキーが押された時に動きます。\n\n【使えるキーの種類】\n・矢印: UP, DOWN, LEFT, RIGHT\n・文字: A, B, C など\n・数字キー: 1, 2, 3 など\n・テンキー: TEN1, TEN2, TENENTER など\n・その他: SPACE, ESC\n\n※「▶ 実行」を押すと自動で画面がオレンジ色に囲まれ、すぐにキー操作ができるようになります！`;
             alert(helpText);
         }
 
-        // 行数を一切ズラさないクリーンな置換処理に変更
         window.getWrappedCode = function() {
             let code = window.editor.getValue();
             code = code.replace(/\bfun\b/g, "async def");
             code = code.replace(/\bRepeat\s*\((.*?)\)\s*:/g, "for _ in range($1):");
             code = code.replace(/\bwait\s*\(/g, "await wait(");
-            code = code.replace(/\bkey\s*\(\s*([a-zA-Z0-9_]+)\s*\)\s*:/g, "async def __key_$1__():");
+            
+            // ★数字キーでエラーにならないよう、裏側で「__key_K_」という安全な名前に変換します
+            code = code.replace(/\bkey\s*\(\s*([a-zA-Z0-9_]+)\s*\)\s*:/g, "async def __key_K_$1__():");
             return code;
         };
     </script>
@@ -133,7 +114,7 @@ key(DOWN):
         import asyncio
         from pyscript import document, when, window
         from js import Audio
-        from pyodide.code import eval_code_async # ★最新の非同期実行システム
+        from pyodide.code import eval_code_async
 
         canvas = document.getElementById("game-canvas")
         ctx = canvas.getContext("2d")
@@ -150,7 +131,6 @@ key(DOWN):
         RED, YELLOW, BLUE, GREEN, BLACK, WHITE = "red", "yellow", "blue", "green", "black", "white"
         infinite = -1
 
-        # 非同期関数と通常関数を安全に呼び出すヘルパー
         def call_user_func(func):
             if callable(func):
                 if asyncio.iscoroutinefunction(func):
@@ -188,7 +168,6 @@ key(DOWN):
                 "border_color": border_color, "action": action
             }
 
-        # --- 新図形コマンド群 ---
         def circle(name, pos, r, color):
             if not is_screen_ready: raise Exception("画面未設定")
             elements[name] = {"type": "circle", "x": pos[0], "y": pos[1], "r": r, "color": color}
@@ -201,7 +180,6 @@ key(DOWN):
             if not is_screen_ready: raise Exception("画面未設定")
             elements[name] = {"type": "line", "x": pos1[0], "y": pos1[1], "x2": pos2[0], "y2": pos2[1], "size": size, "color": color}
 
-        # --- 新状態変更コマンド群 ---
         def text_change(name, new_text):
             if name in elements and "text" in elements[name]: elements[name]["text"] = new_text
 
@@ -221,7 +199,6 @@ key(DOWN):
         def stop_move(name):
             if name in animations: del animations[name]
 
-        # --- 新衝突判定（タッチ）コマンド ---
         def touch(name1, name2):
             if name1 not in elements or name2 not in elements: return False
             def get_box(el):
@@ -262,15 +239,26 @@ key(DOWN):
                     a.play()
                 except Exception: pass
 
-        @when("keydown", "body")
+        # ★大改修：ゲーム画面自体にキーボードイベントを設定し、テンキーにも対応！
+        @when("keydown", "#canvas-wrapper")
         def on_keydown(event):
             if not is_screen_ready: return
-            key_map = {"ARROWUP": "UP", "ARROWDOWN": "DOWN", "ARROWLEFT": "LEFT", "ARROWRIGHT": "RIGHT", " ": "SPACE", "ESCAPE": "ESC"}
-            k = event.key.upper()
-            k = key_map.get(k, k)
-            if k in key_events:
-                if k in ["UP", "DOWN", "LEFT", "RIGHT", "SPACE"]: event.preventDefault()
-                try: call_user_func(key_events[k])
+            
+            k_code = event.code  # Numpad1, Digit1, ArrowUp など
+            k_key = event.key.upper() # 1, A, ARROWUP など
+            
+            mapped_key = None
+            
+            # テンキーかどうかの判定
+            if k_code.startswith("Numpad"):
+                mapped_key = "TEN" + k_code.replace("Numpad", "").upper()
+            else:
+                key_map = {"ARROWUP": "UP", "ARROWDOWN": "DOWN", "ARROWLEFT": "LEFT", "ARROWRIGHT": "RIGHT", " ": "SPACE", "ESCAPE": "ESC"}
+                mapped_key = key_map.get(k_key, k_key)
+                
+            if mapped_key in key_events:
+                if mapped_key in ["UP", "DOWN", "LEFT", "RIGHT", "SPACE"]: event.preventDefault()
+                try: call_user_func(key_events[mapped_key])
                 except Exception: show_japanese_error()
 
         @when("click", "#game-canvas")
@@ -286,7 +274,7 @@ key(DOWN):
                         call_user_func(action)
                         break
 
-        # 精密になった日本語エラー特定システム
+        # ★大改修：wait()に関するエラーメッセージを明確にしました
         def show_japanese_error():
             error_el.style.display = "block"
             exc_type, exc_value, exc_tb = sys.exc_info()
@@ -303,17 +291,20 @@ key(DOWN):
                         break
 
             msg = f"🚨 エラーが発生しました（ {error_line}行目 ）:\n"
-            if "was never closed" in err_str or "unexpected EOF" in err_str or "unclosed string" in err_str:
-                msg += "閉じ忘れエラー: カッコ「()」「[]」や、文字を囲む「\"」の閉じ忘れがあります。エラー行の上の方を優しく確認してください。"
-            elif "NameError" in err_str: msg += "名前エラー: 文字や名前を「\" \"」で囲み忘れていませんか？スペルミス（大文字・小文字）にも注意してください。"
+            
+            if "outside function" in err_str or "outside async function" in err_str:
+                msg += "関数エラー: wait() は fun の中か、key() の中でしか使えません。普通の def の中には書けないので注意してください。"
+            elif "was never closed" in err_str or "unexpected EOF" in err_str or "unclosed string" in err_str:
+                msg += "閉じ忘れエラー: カッコ「()」「[]」や、文字を囲む「\"」の閉じ忘れがあります。エラー行の上の方を探してみてください。"
+            elif "NameError" in err_str: msg += "名前エラー: 文字や名前を「\" \"」で囲み忘れていませんか？スペルミスにも注意してください。"
             elif "SyntaxError" in err_str: msg += "文法エラー: カッコ「()」や「:」の忘れがないか、全角スペースが混ざっていないか確認してください。"
             elif "IndentationError" in err_str: msg += "インデントエラー: keyやfunの下は、半角スペース4つで綺麗に字下げ（インデント）してください。"
             elif "TypeError" in err_str: msg += "引数エラー: カッコの中に入れる情報の数やコンマ「,」の位置が間違っています。"
             elif "画面未設定" in err_str: msg += "画面エラー: 1行目に screen(幅, 高さ) を書いてください。"
             else: msg += "エラーを検出しました。文法を確認してください。\n" + err_str.split('\n')[-3]
+            
             error_el.innerText = msg
 
-        # 言語グローバル登録
         original_language_globals = {
             "screen": screen, "screen_color": screen_color, "print": custom_print, "button": button, 
             "circle": circle, "rect": rect, "line": line, "text_change": text_change, "color_change": color_change,
@@ -333,7 +324,6 @@ key(DOWN):
                 dt = current_time - last_time
                 last_time = current_time
                 
-                # 背景色で塗りつぶし
                 ctx.fillStyle = bg_color_canvas
                 ctx.fillRect(0, 0, canvas.width, canvas.height)
                 
@@ -411,23 +401,22 @@ key(DOWN):
             canvas.width, canvas.height = 0, 0
             error_el.style.display = "none"
             
-            # クリーンな変換後コードを取得
             code = window.getWrappedCode()
-            
-            # グローバル空間を毎回リセットして汚染を防ぐ
             run_globals = original_language_globals.copy()
             
             try:
-                # ★大改修：トップレベルawait対応の非同期リアルタイム実行
                 await eval_code_async(code, globals=run_globals)
                 
-                # キーイベントを自動回収
+                # ★数字キーもテンキーも、ここで自動的に登録されます
                 for name, obj in list(run_globals.items()):
-                    if name.startswith("__key_") and callable(obj):
-                        k_name = name.replace("__key_", "").upper()
+                    if name.startswith("__key_K_") and callable(obj):
+                        k_name = name.replace("__key_K_", "").upper()
                         key_events[k_name] = obj
                         
                 asyncio.ensure_future(game_loop(current_run_id))
+                
+                # ★実行と同時にゲーム画面にフォーカスを当てます
+                document.getElementById("canvas-wrapper").focus()
             except Exception:
                 show_japanese_error()
 
