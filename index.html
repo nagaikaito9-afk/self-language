@@ -14,24 +14,41 @@
         body { margin: 0; font-family: 'Segoe UI', Tahoma, sans-serif; display: flex; flex-direction: column; height: 100vh; background-color: #1e1e1e; color: #d4d4d4; }
         .toolbar { padding: 10px 20px; display: flex; gap: 15px; align-items: center; background-color: #2d2d30; border-bottom: 1px solid #3e3e42; }
         button { padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; background: #007acc; color: white; border: none; }
-        button:hover { background: #005a9e; }
+        button:hover { opacity: 0.8; }
+        
         .main-layout { display: flex; flex: 1; overflow: hidden; padding: 10px; gap: 10px; }
         
+        /* 左：エディタ */
         #editor-container { flex: 1; display: flex; flex-direction: column; font-size: 16px; border: 1px solid #3e3e42; border-radius: 4px; }
         .CodeMirror { flex: 1; font-family: 'Consolas', monospace; border-radius: 4px; }
         
-        /* コンソールではなく、キャンバス（画面）を表示するエリア */
-        #display-container { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #252526; border: 1px solid #3e3e42; border-radius: 4px; position: relative; overflow: hidden;}
+        /* 右：キャンバス（画面）とエラー表示エリア */
+        #display-container { flex: 1; display: flex; flex-direction: column; background-color: #252526; border: 1px solid #3e3e42; border-radius: 4px; position: relative; overflow: hidden;}
+        
+        /* キャンバスを中央に配置する用の枠 */
+        #canvas-wrapper { flex: 1; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 10px; }
         canvas { background-color: white; box-shadow: 0 4px 8px rgba(0,0,0,0.5); }
         
-        /* エラー表示用 */
-        #error-msg { position: absolute; bottom: 10px; left: 10px; color: #ff4c4c; font-weight: bold; font-family: monospace; white-space: pre-wrap; z-index: 10; }
+        /* エラー表示用の黒板（右下に固定） */
+        #error-console { 
+            display: none; 
+            background-color: #3b0000; 
+            color: #ff6b6b; 
+            border-top: 2px solid #ff4c4c;
+            padding: 10px; 
+            font-family: monospace; 
+            font-size: 14px;
+            white-space: pre-wrap; 
+            max-height: 150px; 
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body>
 
     <div class="toolbar">
         <button id="btn-run" style="background: #28a745;">▶ 実行</button>
+        <button onclick="showHelp()" style="background: #17a2b8;">❓ 使い方</button>
     </div>
 
     <div class="main-layout">
@@ -40,13 +57,16 @@
         </div>
 
         <div id="display-container">
-            <canvas id="game-canvas" width="0" height="0"></canvas>
-            <div id="error-msg"></div>
+            <div id="canvas-wrapper">
+                <canvas id="game-canvas" width="0" height="0"></canvas>
+            </div>
+            <div id="error-console"></div>
         </div>
     </div>
 
     <script>
-        let editor = CodeMirror.fromTextArea(document.getElementById("editor"), {
+        // JSの関数を外から呼べるようにwindowに登録
+        window.editor = CodeMirror.fromTextArea(document.getElementById("editor"), {
             mode: "python",
             theme: "monokai",
             lineNumbers: true,
@@ -54,13 +74,32 @@
             matchBrackets: true
         });
         
-        // オリジナル言語のサンプルコード
-        editor.setValue(`screen(500, 400)
+        window.editor.setValue(`screen(500, 400)
 
+# printには「表示したい文字」を最初に入れます
 print("オリジナル言語へようこそ！", (50, 50), 24, BLUE)
 
+# buttonは (座標), (大きさ), "文字", 文字サイズ, 文字色, 背景色
 button((100, 150), (300, 80), "押してね！", 30, RED, YELLOW, BLACK)
 `);
+
+        // 使い方のアラート画面
+        function showHelp() {
+            const helpText = `【オリジナル言語の文法】
+
+① screen(幅, 高さ)
+最初に必ず書いてください。
+例：screen(500, 400)
+
+② print("文字", (X, Y), サイズ, 色)
+画面に文字を表示します。
+例：print("こんにちは", (10, 10), 20, RED)
+
+③ button((X, Y), (幅, 高さ), "文字", 文字サイズ, 文字色, 背景色, 枠の色)
+ボタンを表示します。（枠の色は省略可能）
+例：button((50, 50), (200, 50), "OK", 20, WHITE, BLUE, BLACK)`;
+            alert(helpText);
+        }
     </script>
 
     <script type="py">
@@ -69,15 +108,15 @@ button((100, 150), (300, 80), "押してね！", 30, RED, YELLOW, BLACK)
 
         canvas = document.getElementById("game-canvas")
         ctx = canvas.getContext("2d")
-        error_el = document.getElementById("error-msg")
+        error_el = document.getElementById("error-console")
 
         # --- オリジナル言語のシステム ---
         is_screen_ready = False
 
-        # 色の定義
         RED = "red"
         YELLOW = "yellow"
         BLUE = "blue"
+        GREEN = "green"
         BLACK = "black"
         WHITE = "white"
 
@@ -86,73 +125,74 @@ button((100, 150), (300, 80), "押してね！", 30, RED, YELLOW, BLACK)
             canvas.width = w
             canvas.height = h
             is_screen_ready = True
-            # 背景を白でリセット
             ctx.fillStyle = WHITE
             ctx.fillRect(0, 0, w, h)
 
+        # ユーザーが「文字」を入れ忘れないように第一引数をtextにしています
         def custom_print(text, pos, size, color):
             if not is_screen_ready:
-                raise Exception("ScreenError: 最初に screen() を設定してください！")
+                raise Exception("最初に screen() を設定してください！")
             
             ctx.fillStyle = color
             ctx.font = f"bold {size}px sans-serif"
-            ctx.fillText(str(text), pos[0], pos[1] + size) # Y座標を文字のベースラインに合わせる調整
+            ctx.fillText(str(text), pos[0], pos[1] + size)
 
         def button(pos, size, text, font_size, text_color, bg_color, border_color=None):
             if not is_screen_ready:
-                raise Exception("ScreenError: 最初に screen() を設定してください！")
+                raise Exception("最初に screen() を設定してください！")
             
             x, y = pos
             w, h = size
             
-            # 1. 四角（背景）を描く
             ctx.fillStyle = bg_color
             ctx.fillRect(x, y, w, h)
             
-            # 2. 縁（ボーダー）を描く
             if border_color:
                 ctx.strokeStyle = border_color
                 ctx.lineWidth = 4
                 ctx.strokeRect(x, y, w, h)
                 
-            # 3. 文字を描く（中央揃え）
             ctx.fillStyle = text_color
             ctx.font = f"bold {font_size}px sans-serif"
             ctx.textAlign = "center"
             ctx.textBaseline = "middle"
-            ctx.fillText(text, x + w/2, y + h/2)
+            ctx.fillText(str(text), x + w/2, y + h/2)
             
-            # 描画設定を元に戻す
             ctx.textAlign = "left"
             ctx.textBaseline = "alphabetic"
 
-        # ユーザーが使えるコマンドを登録
         original_language_globals = {
-            "screen": screen,
-            "print": custom_print,
-            "button": button,
-            "RED": RED, "YELLOW": YELLOW, "BLUE": BLUE, "BLACK": BLACK, "WHITE": WHITE
+            "screen": screen, "print": custom_print, "button": button,
+            "RED": RED, "YELLOW": YELLOW, "BLUE": BLUE, "GREEN": GREEN, "BLACK": BLACK, "WHITE": WHITE
         }
 
-        # --- 実行処理 ---
         @when("click", "#btn-run")
         def run_code(event):
             global is_screen_ready
             
-            # 実行前に画面とエラーをリセット
+            # 前の画面とエラーを綺麗に消す
             is_screen_ready = False
+            ctx.clearRect(0, 0, canvas.width, canvas.height)
             canvas.width = 0
             canvas.height = 0
+            
+            error_el.style.display = "none"
             error_el.innerText = ""
             
-            code = editor.getValue()
+            from js import window
+            code = window.editor.getValue()
             
             try:
-                # 登録したコマンドだけを使ってコードを実行
                 exec(code, original_language_globals)
             except Exception as e:
-                # エラーが出たら画面の左下に表示
-                error_el.innerText = str(e)
+                # エラーが出た場合、右下に画面を表示して内容を書き込む
+                error_el.style.display = "block"
+                
+                # ユーザーにとって見やすいように、エラーの最後の数行だけを抽出する
+                err_lines = traceback.format_exc().strip().split('\n')
+                friendly_error = "\n".join(err_lines[-3:]) # 下から3行だけ取得
+                
+                error_el.innerText = "🚨 エラーが発生しました！文法を確認してください:\n" + friendly_error
     </script>
 </body>
 </html>
