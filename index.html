@@ -21,7 +21,7 @@
         .CodeMirror { flex: 1; font-family: 'Consolas', monospace; border-radius: 4px; }
         
         #display-container { flex: 1; display: flex; flex-direction: column; background-color: #252526; border: 1px solid #3e3e42; border-radius: 4px; position: relative; overflow: hidden;}
-        #canvas-wrapper { flex: 1; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 10px; }
+        #canvas-wrapper { flex: 1; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 10px; outline: none; }
         canvas { background-color: white; box-shadow: 0 4px 8px rgba(0,0,0,0.5); cursor: default; }
         
         #error-console { display: none; background-color: #3b0000; color: #ff6b6b; border-top: 2px solid #ff4c4c; padding: 10px; font-family: monospace; font-size: 14px; white-space: pre-wrap; max-height: 150px; overflow-y: auto; }
@@ -53,21 +53,17 @@
             extraKeys: { "Enter": "newlineAndIndent" }
         });
         
-        // ★キーボード操作と音声のサンプルコードです！
         window.editor.setValue(`screen(500, 400)
 
 print("info", "右側の画面をクリックしてから、キーを押してね！", (10, 30), 16, BLUE)
 print("player", "🚗", (200, 150), 60, BLACK)
 
-# UPキー（上矢印）が押されたら動かす
 key(UP):
     move("player", ((200, 150), (200, 50), 0.5), 1)
 
-# DOWNキー（下矢印）が押されたら動かす
 key(DOWN):
     move("player", ((200, 50), (200, 150), 0.5), 1)
 
-# Aキーが押されたらインターネット上の音を鳴らす
 key(A):
     print("msg", "クラクション！", (200, 250), 20, RED)
     audio.play("https://www.soundjay.com/buttons/sounds/button-10.mp3")
@@ -84,20 +80,15 @@ key(A):
 使えるキー：A, B, Cなどのアルファベット、UP, DOWN, LEFT, RIGHT, SPACE, ENTER
 
 ② audio.play("URL")
-インターネット上にあるMP3などの音声を再生します。
-パソコンのフォルダは指定できないので注意してください！
-例：audio.play("https://example.com/sound.mp3")`;
+インターネット上にあるMP3などの音声を再生します。`;
             alert(helpText);
         }
 
-        // ★JS側での魔法の変換処理（key文法を追加！）
         window.getWrappedCode = function() {
             let code = window.editor.getValue();
             code = code.replace(/\bfun\b/g, "def");
             code = code.replace(/\bRepeat\s*\((.*?)\)\s*:/g, "for _ in range($1):");
             code = code.replace(/\bwait\s*\(/g, "await wait(");
-            
-            // key(A): を裏側で @register_key('A') def __key_A__(): に変換する魔法
             code = code.replace(/\bkey\s*\(\s*([a-zA-Z0-9_]+)\s*\)\s*:/g, "@register_key('$1')\ndef __key_$1__():");
             
             let lines = code.split('\n');
@@ -108,24 +99,24 @@ key(A):
     </script>
 
     <script type="py">
+        import sys
         import time
         import random
         import traceback
         import asyncio
         from pyscript import document, when, window
-        from js import Audio # ブラウザの音声機能
+        from js import Audio
 
         canvas = document.getElementById("game-canvas")
         ctx = canvas.getContext("2d")
         error_el = document.getElementById("error-console")
 
-        # --- 新しいゲームエンジンのシステム ---
         is_screen_ready = False
         current_run_id = 0
         
         elements = {}
         animations = {}
-        key_events = {} # キー入力と関数を紐付けるリスト
+        key_events = {}
 
         RED, YELLOW, BLUE, GREEN, BLACK, WHITE = "red", "yellow", "blue", "green", "black", "white"
         infinite = -1
@@ -179,46 +170,30 @@ key(A):
                     except Exception: show_japanese_error()
                 await asyncio.sleep(0.016)
 
-        # --- 新機能：キーボード登録用デコレータ ---
         def register_key(k_name):
             def decorator(func):
-                # 登録された関数をリストに記憶する
                 key_events[k_name.upper()] = func
                 return func
             return decorator
 
-        # --- 新機能：音声再生クラス ---
         class AudioController:
             def play(self, url):
                 try:
-                    # ブラウザのAudio機能を使ってURLから音を鳴らす
                     a = Audio.new(url)
                     a.play()
                 except Exception:
                     custom_print("audio_err", "🚨 音声エラー: URLを確認してください", (10, 380), 14, RED)
 
-        # --- キーボードが押された時の処理 ---
         @when("keydown", "body")
         def on_keydown(event):
             if not is_screen_ready: return
-            
-            # ブラウザのキーコードを、あなたが使いやすい名前に変換
-            key_map = {
-                "ARROWUP": "UP", "ARROWDOWN": "DOWN", "ARROWLEFT": "LEFT", "ARROWRIGHT": "RIGHT", 
-                " ": "SPACE", "ESCAPE": "ESC"
-            }
+            key_map = {"ARROWUP": "UP", "ARROWDOWN": "DOWN", "ARROWLEFT": "LEFT", "ARROWRIGHT": "RIGHT", " ": "SPACE", "ESCAPE": "ESC"}
             k = event.key.upper()
-            k = key_map.get(k, k) # マップに変換表があれば変換、なければそのまま(A, Bなど)
-
-            # 押されたキーが登録されていれば、その処理を呼び出す
+            k = key_map.get(k, k)
             if k in key_events:
-                # 矢印キーで画面がスクロールしてしまうのを防ぐ
-                if k in ["UP", "DOWN", "LEFT", "RIGHT", "SPACE"]:
-                    event.preventDefault()
-                try:
-                    key_events[k]()
-                except Exception:
-                    show_japanese_error()
+                if k in ["UP", "DOWN", "LEFT", "RIGHT", "SPACE"]: event.preventDefault()
+                try: key_events[k]()
+                except Exception: show_japanese_error()
 
         @when("click", "#game-canvas")
         def on_canvas_click(event):
@@ -235,22 +210,48 @@ key(A):
                             except Exception: show_japanese_error()
                         break
 
+        # ==========================================
+        # ★大改修：エラー行数特定システム
+        # ==========================================
         def show_japanese_error():
             error_el.style.display = "block"
+            
+            # 発生したエラーの細かい情報（種類、内容、場所）を取得
+            exc_type, exc_value, exc_tb = sys.exc_info()
             err_str = traceback.format_exc()
-            msg = "🚨 エラーが発生しました:\n"
-            if "NameError" in err_str: msg += "名前エラー: 文字や名前を「\" \"」で囲み忘れていませんか？"
-            elif "SyntaxError" in err_str: msg += "文法エラー: カッコ「()」や「:」の忘れがないか確認してください。"
-            elif "IndentationError" in err_str: msg += "インデントエラー: keyやfunの下はスペースで字下げしてください。"
-            else: msg += "原因不明のエラーです。文法を確認してください。\n" + err_str.split('\n')[-3]
-            error_el.innerText = msg
+            
+            error_line = "不明"
+            
+            # 文法エラー（SyntaxError）の場合、直接行数が記録されている
+            if isinstance(exc_value, SyntaxError) and exc_value.lineno is not None:
+                # 隠しコードの分（1行）を引いて、エディタ上の行数に戻す
+                error_line = str(max(1, exc_value.lineno - 1))
+            else:
+                # それ以外のエラー（スペルミスや引数不足など）の場合、履歴を遡ってユーザーのコードを探す
+                tb_list = traceback.extract_tb(exc_tb)
+                for tb in reversed(tb_list):
+                    # '<string>' や '<exec>' が、ユーザーが実行したコードの目印
+                    if '<string>' in tb.filename or '<exec>' in tb.filename:
+                        error_line = str(max(1, tb.lineno - 1))
+                        break
 
-        # ユーザーが使える機能を登録
+            msg = f"🚨 エラーが発生しました（ {error_line}行目 付近）:\n"
+            
+            if "NameError" in err_str: msg += "名前エラー: 文字や名前を「\" \"」で囲み忘れていませんか？スペルミスにも注意してください。"
+            elif "SyntaxError" in err_str: msg += "文法エラー: カッコ「()」や「:」の忘れがないか、全角スペースが混ざっていないか確認してください。"
+            elif "IndentationError" in err_str: msg += "インデントエラー: keyやfunの下は、半角スペースで字下げ（インデント）してください。"
+            elif "TypeError" in err_str: msg += "引数エラー: カッコの中に入れる情報の数が間違っています。カンマ「,」の数を確認してください。"
+            elif "画面未設定" in err_str: msg += "画面エラー: 1行目に screen(幅, 高さ) を書いてください。"
+            else: msg += "原因不明のエラーです。文法を確認してください。\n" + err_str.split('\n')[-3]
+            
+            error_el.innerText = msg
+        # ==========================================
+
         original_language_globals = {
             "screen": screen, "print": custom_print, "button": button, "erase": erase,
             "move": move, "random": custom_random, "wait": wait, "infinite": infinite,
             "RED": RED, "YELLOW": YELLOW, "BLUE": BLUE, "GREEN": GREEN, "BLACK": BLACK, "WHITE": WHITE,
-            "register_key": register_key, "audio": AudioController() # 音声機能を追加
+            "register_key": register_key, "audio": AudioController()
         }
 
         async def game_loop(run_id):
@@ -323,7 +324,7 @@ key(A):
             
             elements.clear()
             animations.clear()
-            key_events.clear() # 実行ごとにキーの記憶もリセット
+            key_events.clear()
             ctx.clearRect(0, 0, canvas.width, canvas.height)
             canvas.width, canvas.height = 0, 0
             
