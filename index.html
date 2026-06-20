@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>My Original Language Editor</title>
+    <link rel="stylesheet" href="https://pyscript.net/releases/2026.1.1/core.css" />
+    <script type="module" src="https://pyscript.net/releases/2026.1.1/core.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/monokai.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/python/python.min.js"></script>
+
+    <style>
+        body { margin: 0; font-family: 'Segoe UI', Tahoma, sans-serif; display: flex; flex-direction: column; height: 100vh; background-color: #1e1e1e; color: #d4d4d4; }
+        .toolbar { padding: 10px 20px; display: flex; gap: 15px; align-items: center; background-color: #2d2d30; border-bottom: 1px solid #3e3e42; }
+        button { padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; background: #007acc; color: white; border: none; }
+        button:hover { background: #005a9e; }
+        .main-layout { display: flex; flex: 1; overflow: hidden; padding: 10px; gap: 10px; }
+        
+        #editor-container { flex: 1; display: flex; flex-direction: column; font-size: 16px; border: 1px solid #3e3e42; border-radius: 4px; }
+        .CodeMirror { flex: 1; font-family: 'Consolas', monospace; border-radius: 4px; }
+        
+        /* コンソールではなく、キャンバス（画面）を表示するエリア */
+        #display-container { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #252526; border: 1px solid #3e3e42; border-radius: 4px; position: relative; overflow: hidden;}
+        canvas { background-color: white; box-shadow: 0 4px 8px rgba(0,0,0,0.5); }
+        
+        /* エラー表示用 */
+        #error-msg { position: absolute; bottom: 10px; left: 10px; color: #ff4c4c; font-weight: bold; font-family: monospace; white-space: pre-wrap; z-index: 10; }
+    </style>
+</head>
+<body>
+
+    <div class="toolbar">
+        <button id="btn-run" style="background: #28a745;">▶ 実行</button>
+    </div>
+
+    <div class="main-layout">
+        <div id="editor-container">
+            <textarea id="editor"></textarea>
+        </div>
+
+        <div id="display-container">
+            <canvas id="game-canvas" width="0" height="0"></canvas>
+            <div id="error-msg"></div>
+        </div>
+    </div>
+
+    <script>
+        let editor = CodeMirror.fromTextArea(document.getElementById("editor"), {
+            mode: "python",
+            theme: "monokai",
+            lineNumbers: true,
+            indentUnit: 4,
+            matchBrackets: true
+        });
+        
+        // オリジナル言語のサンプルコード
+        editor.setValue(`screen(500, 400)
+
+print("オリジナル言語へようこそ！", (50, 50), 24, BLUE)
+
+button((100, 150), (300, 80), "押してね！", 30, RED, YELLOW, BLACK)
+`);
+    </script>
+
+    <script type="py">
+        import traceback
+        from pyscript import document, when
+
+        canvas = document.getElementById("game-canvas")
+        ctx = canvas.getContext("2d")
+        error_el = document.getElementById("error-msg")
+
+        # --- オリジナル言語のシステム ---
+        is_screen_ready = False
+
+        # 色の定義
+        RED = "red"
+        YELLOW = "yellow"
+        BLUE = "blue"
+        BLACK = "black"
+        WHITE = "white"
+
+        def screen(w, h):
+            global is_screen_ready
+            canvas.width = w
+            canvas.height = h
+            is_screen_ready = True
+            # 背景を白でリセット
+            ctx.fillStyle = WHITE
+            ctx.fillRect(0, 0, w, h)
+
+        def custom_print(text, pos, size, color):
+            if not is_screen_ready:
+                raise Exception("ScreenError: 最初に screen() を設定してください！")
+            
+            ctx.fillStyle = color
+            ctx.font = f"bold {size}px sans-serif"
+            ctx.fillText(str(text), pos[0], pos[1] + size) # Y座標を文字のベースラインに合わせる調整
+
+        def button(pos, size, text, font_size, text_color, bg_color, border_color=None):
+            if not is_screen_ready:
+                raise Exception("ScreenError: 最初に screen() を設定してください！")
+            
+            x, y = pos
+            w, h = size
+            
+            # 1. 四角（背景）を描く
+            ctx.fillStyle = bg_color
+            ctx.fillRect(x, y, w, h)
+            
+            # 2. 縁（ボーダー）を描く
+            if border_color:
+                ctx.strokeStyle = border_color
+                ctx.lineWidth = 4
+                ctx.strokeRect(x, y, w, h)
+                
+            # 3. 文字を描く（中央揃え）
+            ctx.fillStyle = text_color
+            ctx.font = f"bold {font_size}px sans-serif"
+            ctx.textAlign = "center"
+            ctx.textBaseline = "middle"
+            ctx.fillText(text, x + w/2, y + h/2)
+            
+            # 描画設定を元に戻す
+            ctx.textAlign = "left"
+            ctx.textBaseline = "alphabetic"
+
+        # ユーザーが使えるコマンドを登録
+        original_language_globals = {
+            "screen": screen,
+            "print": custom_print,
+            "button": button,
+            "RED": RED, "YELLOW": YELLOW, "BLUE": BLUE, "BLACK": BLACK, "WHITE": WHITE
+        }
+
+        # --- 実行処理 ---
+        @when("click", "#btn-run")
+        def run_code(event):
+            global is_screen_ready
+            
+            # 実行前に画面とエラーをリセット
+            is_screen_ready = False
+            canvas.width = 0
+            canvas.height = 0
+            error_el.innerText = ""
+            
+            code = editor.getValue()
+            
+            try:
+                # 登録したコマンドだけを使ってコードを実行
+                exec(code, original_language_globals)
+            except Exception as e:
+                # エラーが出たら画面の左下に表示
+                error_el.innerText = str(e)
+    </script>
+</body>
+</html>
